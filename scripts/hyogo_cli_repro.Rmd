@@ -1,0 +1,2279 @@
+---
+title: "兵庫CLIの景気予測力：図表再現用スクリプト"
+subtitle: "本文図表および第3章電子補足図"
+author: "N Toyohara"
+date: "`r Sys.Date()`"
+output:
+  word_document:
+    toc: false
+    fig_caption: true
+  html_document: default
+---
+
+# 兵庫CLI論文：本文図表と電子補足図の再生成
+
+このファイルは、論文本文で使用した図表を再生成するとともに、紙幅の都合で本文から割愛した第3章の補助図を電子資料として再現するためのスクリプトである。
+
+データファイルはリポジトリ直下の `data/兵庫cliデータ.xlsx` に配置する。分析対象は **CI_cのみ** とし、計算手順・関数・処理順序は元の分析スクリプトを維持している。
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  fig.width = 6.4,
+  fig.height = 4.4,
+  out.width = "\\linewidth"
+)
+```
+
+```{r, include=FALSE}
+library(openxlsx)
+library(knitr)
+
+filnam <- "data/兵庫cliデータ.xlsx"
+
+cli_raw <- read.xlsx(
+  filnam,
+  sheet = "兵庫CLI",
+  colNames = FALSE
+)
+
+ci_c1 <- read.xlsx(
+  filnam,
+  sheet = "兵庫CI_c",
+  colNames = FALSE
+)
+```
+
+```{r, include=FALSE}
+ym_to_index <- function(ym){
+
+  y <- ym %/% 100
+  m <- ym %% 100
+
+  12 * y + m - 1
+}
+
+index_to_ym <- function(idx){
+
+  y <- idx %/% 12
+  m <- idx %% 12 + 1
+
+  y * 100 + m
+}
+
+add_months_ym <- function(ym, n){
+
+  index_to_ym(
+    ym_to_index(ym) + n
+  )
+}
+
+ym_to_date <- function(ym){
+
+  as.Date(
+    paste0(
+      ym %/% 100,
+      "-",
+      sprintf("%02d", ym %% 100),
+      "-01"
+    )
+  )
+}
+```
+
+```{r, include=FALSE}
+vintage_ym <- as.numeric(
+  unlist(
+    cli_raw[1, -1]
+  )
+)
+
+target_ym <- as.numeric(
+  unlist(
+    cli_raw[-1, 1]
+  )
+)
+
+cli_mat <- as.matrix(
+  cli_raw[-1, -1]
+)
+
+storage.mode(cli_mat) <- "numeric"
+
+keep_col <- which(
+  vintage_ym >= 201707 &
+  vintage_ym <= 202606
+)
+
+vintage_ym <- vintage_ym[
+  keep_col
+]
+
+cli_mat <- cli_mat[
+  ,
+  keep_col,
+  drop = FALSE
+]
+
+pub_ym <- add_months_ym(
+  vintage_ym,
+  2
+)
+
+pub_date <- ym_to_date(
+  pub_ym
+)
+
+cat(
+  "対象ヴィンテージ数:",
+  length(vintage_ym),
+  "\n"
+)
+
+cat(
+  "収録対象月:",
+  min(vintage_ym),
+  "-",
+  max(vintage_ym),
+  "\n"
+)
+
+cat(
+  "実際の公表月:",
+  min(pub_ym),
+  "-",
+  max(pub_ym),
+  "\n"
+)
+```
+
+```{r, results="asis"}
+table1_data <- data.frame(
+  項目 = c(
+    "ヴィンテージ数",
+    "収録対象月",
+    "実際の公表月",
+    "CLI公表ラグ"
+  ),
+  内容 = c(
+    length(vintage_ym),
+    paste0(min(vintage_ym), " - ", max(vintage_ym)),
+    paste0(min(add_months_ym(vintage_ym, 2)), " - ", max(add_months_ym(vintage_ym, 2))),
+    "2か月"
+  )
+)
+
+knitr::kable(
+  table1_data,
+  caption = "表1　兵庫CLIヴィンテージ・データベースの概要",
+  align = c("l", "c"),
+  row.names = FALSE
+)
+```
+
+```{r, include=FALSE}
+cli_release <- data.frame()
+
+last_j <- length(
+  vintage_ym
+)
+
+for(j in seq_along(vintage_ym)){
+
+  ym_t <- vintage_ym[j]
+
+  i_t <- match(
+    ym_t,
+    target_ym
+  )
+
+  ym_tm1 <- add_months_ym(
+    ym_t,
+    -1
+  )
+
+  i_tm1 <- match(
+    ym_tm1,
+    target_ym
+  )
+
+  if(
+    !is.na(i_t) &&
+    !is.na(i_tm1)
+  ){
+
+    cli_initial <- cli_mat[
+      i_t,
+      j
+    ]
+
+    cli_prev_rt <- cli_mat[
+      i_tm1,
+      j
+    ]
+
+    cli_1m <- if(
+      j + 1 <= last_j
+    ){
+      cli_mat[
+        i_t,
+        j + 1
+      ]
+    }else{
+      NA
+    }
+
+    cli_2m <- if(
+      j + 2 <= last_j
+    ){
+      cli_mat[
+        i_t,
+        j + 2
+      ]
+    }else{
+      NA
+    }
+
+    cli_latest <- cli_mat[
+      i_t,
+      last_j
+    ]
+
+    cli_prev_latest <- cli_mat[
+      i_tm1,
+      last_j
+    ]
+
+    tmp <- data.frame(
+      target_ym = ym_t,
+      target_date = ym_to_date(
+        ym_t
+      ),
+      pub_ym = add_months_ym(
+        ym_t,
+        2
+      ),
+      pub_date = ym_to_date(
+        add_months_ym(
+          ym_t,
+          2
+        )
+      ),
+      cli_initial = cli_initial,
+      cli_1m = cli_1m,
+      cli_2m = cli_2m,
+      cli_latest = cli_latest,
+      cli_prev_rt = cli_prev_rt,
+      cli_prev_latest = cli_prev_latest
+    )
+
+    cli_release <- rbind(
+      cli_release,
+      tmp
+    )
+  }
+}
+
+cli_release$rev_1m <- (
+  cli_release$cli_1m -
+  cli_release$cli_initial
+)
+
+cli_release$rev_2m <- (
+  cli_release$cli_2m -
+  cli_release$cli_initial
+)
+
+cli_release$rev_latest <- (
+  cli_release$cli_latest -
+  cli_release$cli_initial
+)
+
+cli_release$delta_rt <- (
+  cli_release$cli_initial -
+  cli_release$cli_prev_rt
+)
+
+cli_release$delta_latest <- (
+  cli_release$cli_latest -
+  cli_release$cli_prev_latest
+)
+
+cli_release$sign_rt <- sign(
+  cli_release$delta_rt
+)
+
+cli_release$sign_latest <- sign(
+  cli_release$delta_latest
+)
+
+cli_release$sign_stable <- (
+  cli_release$sign_rt ==
+  cli_release$sign_latest
+)
+
+```
+
+```{r, fig.show="hold", fig.width=10.0, fig.height=6.2, out.width="100%", fig.cap="図1　2025年1月を例とした兵庫CLIヴィンテージ・データベースの逐次的構造"}
+plot.new()
+
+plot.window(
+  xlim = c(0, 12),
+  ylim = c(0, 8.4)
+)
+
+# headers
+text(1.0, 7.75, "対象月", adj = 0, cex = 1.0)
+text(3.0, 7.75, expression(V[202501]), cex = 1.15)
+text(5.6, 7.75, expression(V[202502]), cex = 1.15)
+text(8.2, 7.75, expression(V[202503]), cex = 1.15)
+text(10.8, 7.75, expression(V[202606]), cex = 1.15)
+
+text(3.0, 7.35, "2025年3月公表", cex = 0.82)
+text(5.6, 7.35, "2025年4月公表", cex = 0.82)
+text(8.2, 7.35, "2025年5月公表", cex = 0.82)
+text(10.8, 7.35, "2026年8月公表", cex = 0.82)
+
+segments(2.0, 7.0, 11.5, 7.0)
+
+# rows
+rows_y <- c(6.0, 4.8, 3.6, 2.4)
+row_lab <- c("2024/12", "2025/01", "2025/02", "2025/03")
+
+for(i in seq_along(rows_y)){
+  text(1.0, rows_y[i], row_lab[i], cex = 1.0)
+}
+
+# V_202501
+text(3.0, 6.0, "99.803", cex = 1.18)
+text(3.0, 4.8, "99.924", cex = 1.18)
+
+# V_202502
+text(5.6, 6.0, "99.869", cex = 1.18)
+text(5.6, 4.8, "99.975", cex = 1.18)
+text(5.6, 3.6, "100.109", cex = 1.18)
+
+# V_202503
+text(8.2, 6.0, "99.852", cex = 1.18)
+text(8.2, 4.8, "99.939", cex = 1.18)
+text(8.2, 3.6, "100.046", cex = 1.18)
+text(8.2, 2.4, "100.155", cex = 1.18)
+
+# latest / V_202606
+text(10.8, 6.0, "99.560", cex = 1.18)
+text(10.8, 4.8, "99.508", cex = 1.18)
+text(10.8, 3.6, "99.428", cex = 1.18)
+text(10.8, 2.4, "99.290", cex = 1.18)
+
+# horizontal revision arrows
+for(y in c(6.0, 4.8)){
+  arrows(3.55, y, 5.05, y, length = 0.08)
+  arrows(6.15, y, 7.65, y, length = 0.08)
+  arrows(8.75, y, 10.25, y, length = 0.08)
+}
+arrows(6.15, 3.6, 7.65, 3.6, length = 0.08)
+arrows(8.75, 3.6, 10.25, 3.6, length = 0.08)
+arrows(8.75, 2.4, 10.25, 2.4, length = 0.08)
+
+# recursive new endpoint path
+arrows(
+  3.30,
+  4.45,
+  5.25,
+  3.85,
+  length = 0.10,
+  lwd = 2
+)
+
+arrows(
+  5.90,
+  3.25,
+  7.85,
+  2.65,
+  length = 0.10,
+  lwd = 2
+)
+
+# Real-time direction in the first vintage
+arrows(
+  3.0,
+  5.70,
+  3.0,
+  5.10,
+  length = 0.10,
+  lwd = 1.6
+)
+
+text(
+  3.30,
+  5.42,
+  expression(Delta*CLI[2025/01]^{RT}==0.121),
+  adj = 0,
+  cex = 1.0
+)
+
+text(
+  6.15,
+  1.35,
+  "公表時点が1か月進むたびに：過去系列を更新 ＋ 新しい対象月を1つ追加",
+  cex = 1.0
+)
+
+text(
+  6.10,
+  0.58,
+  "横方向＝同じ対象月の改定　　斜め方向＝逐次追加される新規値　　縦方向＝同一ヴィンテージ内の方向判断",
+  cex = 0.90
+)
+
+box()
+```
+
+```{r, fig.show="hold", fig.env="figure*", fig.width=13.5, fig.height=5.4, out.width="100%", fig.cap="図2　初回公表値と最新ヴィンテージによるCLI変化の対応", results="hide"}
+make_first_latest_change <- function(
+  cli_data,
+  h
+){
+
+  out <- data.frame()
+
+  for(i in 1:nrow(cli_data)){
+
+    ym0 <- cli_data$target_ym[i]
+
+    ymh <- add_months_ym(
+      ym0,
+      h
+    )
+
+    ih <- match(
+      ymh,
+      cli_data$target_ym
+    )
+
+    if(is.na(ih)){
+      next
+    }
+
+    first0 <- cli_data$cli_initial[i]
+    firsth <- cli_data$cli_initial[ih]
+
+    latest0 <- cli_data$cli_latest[i]
+    latesth <- cli_data$cli_latest[ih]
+
+    if(
+      any(
+        is.na(
+          c(
+            first0,
+            firsth,
+            latest0,
+            latesth
+          )
+        )
+      )
+    ){
+      next
+    }
+
+    p <- cli_data$pub_ym[i]
+
+    period <- ifelse(
+      p <= 202002,
+      "Pre-COVID",
+      ifelse(
+        p <= 202112,
+        "COVID",
+        "Post-COVID"
+      )
+    )
+
+    out <- rbind(
+      out,
+      data.frame(
+        target_ym = ym0,
+        pub_ym = p,
+        period = period,
+        horizon = h,
+        first = firsth - first0,
+        latest = latesth - latest0
+      )
+    )
+  }
+
+  out
+}
+
+first_latest_h1 <- make_first_latest_change(
+  cli_release,
+  1
+)
+
+first_latest_h3 <- make_first_latest_change(
+  cli_release,
+  3
+)
+
+first_latest_h6 <- make_first_latest_change(
+  cli_release,
+  6
+)
+
+
+first_latest_corr <- data.frame(
+  期間 = c("1か月", "3か月", "6か月"),
+  観測数 = c(
+    nrow(first_latest_h1),
+    nrow(first_latest_h3),
+    nrow(first_latest_h6)
+  ),
+  相関係数 = c(
+    cor(first_latest_h1$first, first_latest_h1$latest, use = "complete.obs"),
+    cor(first_latest_h3$first, first_latest_h3$latest, use = "complete.obs"),
+    cor(first_latest_h6$first, first_latest_h6$latest, use = "complete.obs")
+  )
+)
+
+table2_display <- first_latest_corr
+table2_display$相関係数 <- sprintf(
+  "%.2f",
+  table2_display$相関係数
+)
+
+knitr::kable(
+  table2_display,
+  caption = "表2　初回公表値と最新ヴィンテージから計算したCLI変化の相関",
+  align = c("c", "c", "c"),
+  row.names = FALSE
+)
+
+plot_first_latest <- function(
+  d,
+  h
+){
+
+  lim <- range(
+    c(
+      d$first,
+      d$latest
+    ),
+    na.rm = TRUE
+  )
+
+  period_cols <- c(
+    "Pre-COVID" = "steelblue4",
+    "COVID" = "firebrick2",
+    "Post-COVID" = "darkgreen"
+  )
+
+  plot(
+    d$first,
+    d$latest,
+    pch = 19,
+    cex = 1.35,
+    col = period_cols[d$period],
+    xlim = lim,
+    ylim = lim,
+    asp = 1,
+    xlab = "CLI first",
+    ylab = "CLI latest",
+    main = paste0(
+      "h=",
+      h
+    )
+  )
+
+  abline(
+    0,
+    1
+  )
+
+  r_all <- cor(
+    d$first,
+    d$latest,
+    use = "complete.obs"
+  )
+
+  usr <- par("usr")
+
+  text(
+    usr[2] -
+      0.06 * (
+        usr[2] -
+        usr[1]
+      ),
+    usr[3] +
+      0.08 * (
+        usr[4] -
+        usr[3]
+      ),
+    labels = sprintf(
+      "%.2f",
+      r_all
+    ),
+    adj = c(1, 0)
+  )
+
+  legend(
+    "topleft",
+    legend = c(
+      "Pre-COVID",
+      "COVID",
+      "Post-COVID"
+    ),
+    col = period_cols[
+      c(
+        "Pre-COVID",
+        "COVID",
+        "Post-COVID"
+      )
+    ],
+    pch = 19,
+    bty = "n",
+    cex = 0.9
+  )
+}
+
+par(
+  mfrow = c(1, 3),
+  mar = c(4.2, 4.2, 3.0, 1.0)
+)
+
+plot_first_latest(
+  first_latest_h1,
+  1
+)
+
+plot_first_latest(
+  first_latest_h3,
+  3
+)
+
+plot_first_latest(
+  first_latest_h6,
+  6
+)
+
+par(
+  mfrow = c(1, 1)
+)
+```
+```{r, results="asis"}
+knitr::kable(
+  table2_display,
+  caption = "表2　初回公表値と最新ヴィンテージから計算したCLI変化の相関",
+  align = c("c", "c", "c"),
+  row.names = FALSE
+)
+```
+
+
+
+```{r, include=FALSE}
+cli_release$direction_rt <- ifelse(
+  cli_release$delta_rt > 0,
+  1,
+  ifelse(
+    cli_release$delta_rt < 0,
+    -1,
+    0
+  )
+)
+
+cli_release$direction_latest <- ifelse(
+  cli_release$delta_latest > 0,
+  1,
+  ifelse(
+    cli_release$delta_latest < 0,
+    -1,
+    0
+  )
+)
+
+cli_release$direction_label <- ifelse(
+  cli_release$direction_rt == 1,
+  "上昇",
+  ifelse(
+    cli_release$direction_rt == -1,
+    "下降",
+    "横ばい"
+  )
+)
+```
+
+```{r, include=FALSE}
+valid_direction <- (
+  cli_release$direction_rt != 0 &
+  cli_release$direction_latest != 0 &
+  !is.na(cli_release$direction_rt) &
+  !is.na(cli_release$direction_latest)
+)
+
+cli_release$direction_stable <- (
+  cli_release$direction_rt ==
+  cli_release$direction_latest
+)
+
+direction_stability <- data.frame(
+  評価対象月数 = sum(valid_direction),
+  方向一致月数 = sum(
+    cli_release$direction_stable[valid_direction]
+  ),
+  方向一致率 = mean(
+    cli_release$direction_stable[valid_direction]
+  )
+)
+
+```
+
+```{r, include=FALSE}
+direction_changed <- cli_release[
+  valid_direction &
+  !cli_release$direction_stable,
+  c(
+    "target_ym",
+    "pub_ym",
+    "delta_rt",
+    "delta_latest",
+    "direction_rt",
+    "direction_latest"
+  )
+]
+
+```
+
+```{r, include=FALSE}
+n <- nrow(cli_release)
+
+cli_release$signal_2m <- 0
+cli_release$signal_3m <- 0
+
+for(i in 2:n){
+
+  x <- cli_release$direction_rt[
+    (i - 1):i
+  ]
+
+  if(
+    all(!is.na(x)) &&
+    all(x == 1)
+  ){
+    cli_release$signal_2m[i] <- 1
+  }
+
+  if(
+    all(!is.na(x)) &&
+    all(x == -1)
+  ){
+    cli_release$signal_2m[i] <- -1
+  }
+}
+
+for(i in 3:n){
+
+  x <- cli_release$direction_rt[
+    (i - 2):i
+  ]
+
+  if(
+    all(!is.na(x)) &&
+    all(x == 1)
+  ){
+    cli_release$signal_3m[i] <- 1
+  }
+
+  if(
+    all(!is.na(x)) &&
+    all(x == -1)
+  ){
+    cli_release$signal_3m[i] <- -1
+  }
+}
+```
+
+```{r, include=FALSE}
+persist_summary <- data.frame(
+  シグナル = c(
+    "2か月連続上昇",
+    "2か月連続下降",
+    "3か月連続上昇",
+    "3か月連続下降"
+  ),
+  回数 = c(
+    sum(cli_release$signal_2m == 1, na.rm = TRUE),
+    sum(cli_release$signal_2m == -1, na.rm = TRUE),
+    sum(cli_release$signal_3m == 1, na.rm = TRUE),
+    sum(cli_release$signal_3m == -1, na.rm = TRUE)
+  )
+)
+
+```
+
+```{r, include=FALSE}
+make_ci_data <- function(x, label){
+
+  d <- data.frame(
+    ym = as.numeric(
+      unlist(
+        x[-1, 1]
+      )
+    ),
+    ci = as.numeric(
+      unlist(
+        x[-1, 2]
+      )
+    )
+  )
+
+  d$date <- ym_to_date(
+    d$ym
+  )
+
+  d$label <- label
+
+  d <- d[
+    order(d$ym),
+  ]
+
+  d
+}
+
+ci1 <- make_ci_data(
+  ci_c1,
+  "CI_c"
+)
+```
+
+```{r, include=FALSE}
+direction_accuracy_publication <- function(
+  ci_data,
+  cli_data,
+  signal_name = "direction_rt",
+  horizons = 1:6
+){
+
+  out <- data.frame()
+
+  for(h in horizons){
+
+    for(i in 1:nrow(cli_data)){
+
+      signal <- cli_data[[signal_name]][i]
+
+      if(
+        is.na(signal) ||
+        signal == 0
+      ){
+        next
+      }
+
+      p <- cli_data$pub_ym[i]
+
+      i0 <- match(
+        p,
+        ci_data$ym
+      )
+
+      ih <- match(
+        add_months_ym(
+          p,
+          h
+        ),
+        ci_data$ym
+      )
+
+      if(
+        is.na(i0) ||
+        is.na(ih)
+      ){
+        next
+      }
+
+      ci_change <- (
+        ci_data$ci[ih] -
+        ci_data$ci[i0]
+      )
+
+      ci_direction <- sign(
+        ci_change
+      )
+
+      if(
+        is.na(ci_direction) ||
+        ci_direction == 0
+      ){
+        next
+      }
+
+      out <- rbind(
+        out,
+        data.frame(
+          target_ym = cli_data$target_ym[i],
+          pub_ym = p,
+          horizon = h,
+          signal = signal,
+          ci_change = ci_change,
+          ci_direction = ci_direction,
+          hit = (
+            signal == ci_direction
+          )
+        )
+      )
+    }
+  }
+
+  out
+}
+```
+
+```{r, include=FALSE}
+dir1_ci1 <- direction_accuracy_publication(
+  ci1,
+  cli_release,
+  "direction_rt",
+  1:6
+)
+
+summarize_accuracy <- function(x, label, signal_label){
+
+  do.call(
+    rbind,
+    lapply(
+      sort(unique(x$horizon)),
+      function(h){
+
+        d <- x[
+          x$horizon == h,
+        ]
+
+        data.frame(
+          CI系列 = label,
+          シグナル = signal_label,
+          予測先月数 = h,
+          評価月数 = nrow(d),
+          一致月数 = sum(d$hit),
+          方向一致率 = mean(d$hit)
+        )
+      }
+    )
+  )
+}
+
+single_direction_summary <- summarize_accuracy(
+  dir1_ci1,
+  "CI_c",
+  "単月方向"
+)
+```
+
+```{r, include=FALSE}
+dir2_ci1 <- direction_accuracy_publication(
+  ci1,
+  cli_release,
+  "signal_2m",
+  1:6
+)
+
+dir3_ci1 <- direction_accuracy_publication(
+  ci1,
+  cli_release,
+  "signal_3m",
+  1:6
+)
+
+persistent_direction_summary <- rbind(
+  summarize_accuracy(
+    dir2_ci1,
+    "CI_c",
+    "2か月連続"
+  ),
+  summarize_accuracy(
+    dir3_ci1,
+    "CI_c",
+    "3か月連続"
+  )
+)
+```
+
+```{r, include=FALSE}
+summarize_by_signal <- function(x, label, signal_label){
+
+  out <- data.frame()
+
+  for(h in sort(unique(x$horizon))){
+
+    for(s in c(-1, 1)){
+
+      d <- x[
+        x$horizon == h &
+        x$signal == s,
+      ]
+
+      if(nrow(d) == 0){
+        next
+      }
+
+      out <- rbind(
+        out,
+        data.frame(
+          CI系列 = label,
+          シグナル種別 = signal_label,
+          CLI方向 = ifelse(
+            s == 1,
+            "上昇",
+            "下降"
+          ),
+          予測先月数 = h,
+          評価月数 = nrow(d),
+          方向一致率 = mean(d$hit)
+        )
+      )
+    }
+  }
+
+  out
+}
+
+signal_side_summary <- rbind(
+  summarize_by_signal(
+    dir1_ci1,
+    "CI_c",
+    "単月方向"
+  ),
+  summarize_by_signal(
+    dir2_ci1,
+    "CI_c",
+    "2か月連続"
+  ),
+  summarize_by_signal(
+    dir3_ci1,
+    "CI_c",
+    "3か月連続"
+  )
+)
+```
+
+```{r, include=FALSE}
+cli_release$turn_signal_2m <- 0
+
+for(i in 2:nrow(cli_release)){
+
+  if(
+    cli_release$signal_2m[i] != 0 &&
+    cli_release$signal_2m[i - 1] !=
+    cli_release$signal_2m[i]
+  ){
+    cli_release$turn_signal_2m[i] <-
+      cli_release$signal_2m[i]
+  }
+}
+
+cli_turns <- cli_release[
+  cli_release$turn_signal_2m != 0,
+  c(
+    "target_ym",
+    "pub_ym",
+    "pub_date",
+    "turn_signal_2m"
+  )
+]
+
+cli_turns$転換方向 <- ifelse(
+  cli_turns$turn_signal_2m == 1,
+  "上昇転換",
+  "下降転換"
+)
+
+```
+
+```{r, include=FALSE}
+make_ci_turns <- function(ci_data){
+
+  d <- ci_data
+
+  d$delta <- c(
+    NA,
+    diff(d$ci)
+  )
+
+  d$direction <- sign(
+    d$delta
+  )
+
+  d$signal_2m <- 0
+
+  for(i in 2:nrow(d)){
+
+    x <- d$direction[
+      (i - 1):i
+    ]
+
+    if(
+      all(!is.na(x)) &&
+      all(x == 1)
+    ){
+      d$signal_2m[i] <- 1
+    }
+
+    if(
+      all(!is.na(x)) &&
+      all(x == -1)
+    ){
+      d$signal_2m[i] <- -1
+    }
+  }
+
+  d$turn <- 0
+
+  for(i in 2:nrow(d)){
+
+    if(
+      d$signal_2m[i] != 0 &&
+      d$signal_2m[i - 1] !=
+      d$signal_2m[i]
+    ){
+      d$turn[i] <- d$signal_2m[i]
+    }
+  }
+
+  d[
+    d$turn != 0,
+    c(
+      "ym",
+      "date",
+      "turn"
+    )
+  ]
+}
+
+ci1_turns <- make_ci_turns(
+  ci1
+)
+```
+
+```{r, include=FALSE}
+turning_lead <- function(
+  cli_turns,
+  ci_turns,
+  label,
+  max_horizon = 12
+){
+
+  out <- data.frame()
+
+  for(i in 1:nrow(cli_turns)){
+
+    p <- cli_turns$pub_ym[i]
+    s <- cli_turns$turn_signal_2m[i]
+
+    cand <- ci_turns[
+      ci_turns$turn == s &
+      ci_turns$ym >= p,
+    ]
+
+    if(nrow(cand) == 0){
+      next
+    }
+
+    lead <- ym_to_index(
+      cand$ym[1]
+    ) - ym_to_index(
+      p
+    )
+
+    if(
+      lead >= 0 &&
+      lead <= max_horizon
+    ){
+
+      out <- rbind(
+        out,
+        data.frame(
+          CI系列 = label,
+          CLI公表月 = p,
+          CLI転換 = ifelse(
+            s == 1,
+            "上昇転換",
+            "下降転換"
+          ),
+          CI転換月 = cand$ym[1],
+          先行月数 = lead
+        )
+      )
+    }
+  }
+
+  out
+}
+
+turn_lead_ci1 <- turning_lead(
+  cli_turns,
+  ci1_turns,
+  "CI_c"
+)
+
+turn_lead_table <- turn_lead_ci1
+```
+
+```{r, include=FALSE}
+turn_lead_summary <- do.call(
+  rbind,
+  lapply(
+    unique(turn_lead_table$CI系列),
+    function(z){
+
+      d <- turn_lead_table[
+        turn_lead_table$CI系列 == z,
+      ]
+
+      data.frame(
+        CI系列 = z,
+        対応転換数 = nrow(d),
+        平均先行月数 = mean(
+          d$先行月数,
+          na.rm = TRUE
+        ),
+        中央先行月数 = median(
+          d$先行月数,
+          na.rm = TRUE
+        )
+      )
+    }
+  )
+)
+
+```
+
+```{r, include=FALSE}
+period_from_pub <- function(pub_ym){
+
+  ifelse(
+    pub_ym <= 202002,
+    "Pre-COVID",
+    ifelse(
+      pub_ym <= 202112,
+      "COVID",
+      "Post-COVID"
+    )
+  )
+}
+
+add_period <- function(x){
+
+  x$period <- period_from_pub(
+    x$pub_ym
+  )
+
+  x
+}
+
+dir1_ci1 <- add_period(dir1_ci1)
+dir2_ci1 <- add_period(dir2_ci1)
+dir3_ci1 <- add_period(dir3_ci1)
+
+summarize_period <- function(
+  x,
+  label,
+  signal_label
+){
+
+  periods <- c(
+    "Pre-COVID",
+    "COVID",
+    "Post-COVID"
+  )
+
+  out <- data.frame()
+
+  for(p in periods){
+
+    for(h in sort(unique(x$horizon))){
+
+      d <- x[
+        x$period == p &
+        x$horizon == h,
+      ]
+
+      if(nrow(d) == 0){
+        next
+      }
+
+      out <- rbind(
+        out,
+        data.frame(
+          CI系列 = label,
+          シグナル = signal_label,
+          period = p,
+          予測先月数 = h,
+          評価月数 = nrow(d),
+          方向一致率 = mean(d$hit)
+        )
+      )
+    }
+  }
+
+  out
+}
+
+period_accuracy <- rbind(
+  summarize_period(
+    dir1_ci1,
+    "CI_c",
+    "単月方向"
+  ),
+  summarize_period(
+    dir2_ci1,
+    "CI_c",
+    "2か月連続"
+  ),
+  summarize_period(
+    dir3_ci1,
+    "CI_c",
+    "3か月連続"
+  )
+)
+```
+
+```{r, results="asis"}
+table3_turn <- turn_lead_table[
+  ,
+  c(
+    "CLI公表月",
+    "CLI転換",
+    "CI転換月",
+    "先行月数"
+  )
+]
+
+names(table3_turn) <- c(
+  "CLI公表月",
+  "CLI転換",
+  "CI_c転換月",
+  "先行月数"
+)
+
+knitr::kable(
+  table3_turn,
+  caption = "表3　リアルタイムCLI転換シグナルとCI_c簡易転換点の対応",
+  align = c(
+    "c",
+    "c",
+    "c",
+    "c"
+  ),
+  row.names = FALSE
+)
+```
+
+```{r, fig.show="hold", fig.width=8.0, fig.height=5.5, out.width="100%", results="asis"}
+accuracy_summary_ci_c <- rbind(
+  summarize_accuracy(
+    dir1_ci1,
+    "CI_c",
+    "単月方向"
+  ),
+  summarize_accuracy(
+    dir2_ci1,
+    "CI_c",
+    "2か月連続"
+  ),
+  summarize_accuracy(
+    dir3_ci1,
+    "CI_c",
+    "3か月連続"
+  )
+)
+
+table3_source <- accuracy_summary_ci_c[
+  accuracy_summary_ci_c$予測先月数 %in% c(1, 3, 6),
+  c(
+    "シグナル",
+    "予測先月数",
+    "方向一致率"
+  )
+]
+
+table3_data <- reshape(
+  table3_source,
+  idvar = "シグナル",
+  timevar = "予測先月数",
+  direction = "wide"
+)
+
+names(table3_data) <- c(
+  "シグナル",
+  "1か月先",
+  "3か月先",
+  "6か月先"
+)
+
+for(j in 2:4){
+  table3_data[[j]] <- sprintf(
+    "%.3f",
+    table3_data[[j]]
+  )
+}
+
+table3_data <- table3_data[
+  match(
+    table3_data$シグナル,
+    c(
+      "単月方向",
+      "2か月連続",
+      "3か月連続"
+    )
+  ),
+]
+
+knitr::kable(
+  table3_data,
+  caption = "表4　リアルタイム方向シグナルの方向一致率（CI_c）",
+  align = c(
+    "l",
+    "c",
+    "c",
+    "c"
+  ),
+  row.names = FALSE
+)
+
+plot(
+  range(
+    accuracy_summary_ci_c$予測先月数
+  ),
+  c(0, 1),
+  type = "n",
+  xlab = "Months after publication",
+  ylab = "Direction accuracy",
+  main = "Direction accuracy by signal: CI_c"
+)
+
+abline(
+  h = 0.5,
+  lty = 3
+)
+
+sigs <- c(
+  "単月方向",
+  "2か月連続",
+  "3か月連続"
+)
+
+ltys <- c(1, 2, 3)
+pchs <- c(19, 17, 15)
+
+for(i in seq_along(sigs)){
+
+  di <- accuracy_summary_ci_c[
+    accuracy_summary_ci_c$シグナル == sigs[i],
+  ]
+
+  lines(
+    di$予測先月数,
+    di$方向一致率,
+    type = "b",
+    lty = ltys[i],
+    pch = pchs[i]
+  )
+}
+
+legend(
+  "topright",
+  legend = sigs,
+  lty = ltys,
+  pch = pchs,
+  bty = "n"
+)
+```
+
+**図3　方向シグナル別の方向一致率（CI_c）**
+
+
+## 本文掲載図：COVID-19前後の方向予測精度
+
+```{r, fig.cap="図4　COVID-19前後の方向一致率（2か月連続シグナル、CI_c）"}
+plot_period_accuracy <- function(
+  ci_name,
+  signal_name,
+  title_text
+){
+
+  d <- period_accuracy[
+    period_accuracy$CI系列 == ci_name &
+    period_accuracy$シグナル == signal_name,
+  ]
+
+  periods <- c(
+    "Pre-COVID",
+    "COVID",
+    "Post-COVID"
+  )
+
+  plot(
+    range(d$予測先月数),
+    c(0, 1),
+    type = "n",
+    xlab = "Months after publication",
+    ylab = "Direction accuracy",
+    main = title_text
+  )
+
+  abline(
+    h = 0.5,
+    lty = 3
+  )
+
+  for(i in seq_along(periods)){
+
+    p <- periods[i]
+
+    z <- d[
+      d$period == p,
+    ]
+
+    lines(
+      z$予測先月数,
+      z$方向一致率,
+      type = "b",
+      lty = i,
+      pch = i
+    )
+  }
+
+  legend(
+    "topright",
+    legend = periods,
+    lty = seq_along(periods),
+    pch = seq_along(periods),
+    bty = "n"
+  )
+}
+
+plot_period_accuracy(
+  "CI_c",
+  "2か月連続",
+  "Persistent signal by period: CI_c"
+)
+```
+
+
+
+```{r, include=FALSE}
+vintage_decomp <- data.frame()
+
+for(j in 2:length(vintage_ym)){
+
+  ym_t <- vintage_ym[j]
+  ym_tm1 <- add_months_ym(
+    ym_t,
+    -1
+  )
+
+  i_t <- match(
+    ym_t,
+    target_ym
+  )
+
+  i_tm1 <- match(
+    ym_tm1,
+    target_ym
+  )
+
+  if(
+    is.na(i_t) ||
+    is.na(i_tm1)
+  ){
+    next
+  }
+
+  cli_t_r <- cli_mat[
+    i_t,
+    j
+  ]
+
+  cli_tm1_r <- cli_mat[
+    i_tm1,
+    j
+  ]
+
+  cli_tm1_rm1 <- cli_mat[
+    i_tm1,
+    j - 1
+  ]
+
+  if(
+    any(
+      is.na(
+        c(
+          cli_t_r,
+          cli_tm1_r,
+          cli_tm1_rm1
+        )
+      )
+    )
+  ){
+    next
+  }
+
+  new_information <- (
+    cli_t_r -
+    cli_tm1_r
+  )
+
+  revision_previous <- (
+    cli_tm1_r -
+    cli_tm1_rm1
+  )
+
+  total_update <- (
+    cli_t_r -
+    cli_tm1_rm1
+  )
+
+  vintage_decomp <- rbind(
+    vintage_decomp,
+    data.frame(
+      target_ym = ym_t,
+      pub_ym = add_months_ym(
+        ym_t,
+        2
+      ),
+      pub_date = ym_to_date(
+        add_months_ym(
+          ym_t,
+          2
+        )
+      ),
+      新規方向情報 = new_information,
+      前月値の改定 = revision_previous,
+      公表間の総変化 = total_update,
+      分解誤差 = total_update -
+        new_information -
+        revision_previous
+    )
+  )
+}
+```
+
+```{r, fig.cap=c("補助図S1　ヴィンテージ更新の時系列分解","補助図S2　新規方向情報と前月値改定の4象限")}
+
+plot(
+  vintage_decomp$pub_date,
+  vintage_decomp$新規方向情報,
+  type = "l",
+  lty = 1,
+  xlab = "Publication date",
+  ylab = "CLI change",
+  main = "Vintage update decomposition over time"
+)
+
+lines(
+  vintage_decomp$pub_date,
+  vintage_decomp$前月値の改定,
+  lty = 2
+)
+
+abline(
+  h = 0,
+  lty = 3
+)
+
+legend(
+  "topright",
+  legend = c(
+    "New information",
+    "Revision of previous month"
+  ),
+  lty = c(1, 2),
+  bty = "n"
+)
+
+plot(
+  vintage_decomp$前月値の改定,
+  vintage_decomp$新規方向情報,
+  xlab = "Revision of previous month",
+  ylab = "New information",
+  main = "Quadrants of vintage update"
+)
+
+abline(
+  h = 0,
+  v = 0,
+  lty = 3
+)
+
+```
+
+```{r, include=FALSE}
+vintage_decomp_summary <- data.frame(
+  指標 = c(
+    "新規方向情報",
+    "前月値の改定",
+    "公表間の総変化"
+  ),
+  平均 = c(
+    mean(vintage_decomp$新規方向情報, na.rm = TRUE),
+    mean(vintage_decomp$前月値の改定, na.rm = TRUE),
+    mean(vintage_decomp$公表間の総変化, na.rm = TRUE)
+  ),
+  平均絶対値 = c(
+    mean(abs(vintage_decomp$新規方向情報), na.rm = TRUE),
+    mean(abs(vintage_decomp$前月値の改定), na.rm = TRUE),
+    mean(abs(vintage_decomp$公表間の総変化), na.rm = TRUE)
+  ),
+  標準偏差 = c(
+    sd(vintage_decomp$新規方向情報, na.rm = TRUE),
+    sd(vintage_decomp$前月値の改定, na.rm = TRUE),
+    sd(vintage_decomp$公表間の総変化, na.rm = TRUE)
+  )
+)
+```
+
+```{r, include=FALSE}
+make_heij_data <- function(
+  ci_data,
+  cli_data,
+  horizon
+){
+
+  out <- data.frame()
+
+  for(i in 1:nrow(cli_data)){
+
+    p <- cli_data$pub_ym[i]
+
+    i0 <- match(
+      p,
+      ci_data$ym
+    )
+
+    im1 <- match(
+      add_months_ym(
+        p,
+        -1
+      ),
+      ci_data$ym
+    )
+
+    ih <- match(
+      add_months_ym(
+        p,
+        horizon
+      ),
+      ci_data$ym
+    )
+
+    if(
+      is.na(i0) ||
+      is.na(im1) ||
+      is.na(ih)
+    ){
+      next
+    }
+
+    out <- rbind(
+      out,
+      data.frame(
+        target_ym = cli_data$target_ym[i],
+        pub_ym = p,
+        pub_date = cli_data$pub_date[i],
+        horizon = horizon,
+        y = ci_data$ci[ih] -
+          ci_data$ci[i0],
+        dci = ci_data$ci[i0] -
+          ci_data$ci[im1],
+        cli_rt = cli_data$delta_rt[i],
+        cli_latest = cli_data$delta_latest[i],
+        outcome_ym = add_months_ym(
+          p,
+          horizon
+        )
+      )
+    )
+  }
+
+  out
+}
+
+rolling_heij <- function(
+  d,
+  min_train = 24
+){
+
+  out <- data.frame()
+
+  for(i in 1:nrow(d)){
+
+    p <- d$pub_ym[i]
+
+    train <- d[
+      d$outcome_ym <= p &
+      d$pub_ym < p &
+      complete.cases(
+        d[, c(
+          "y",
+          "dci",
+          "cli_rt",
+          "cli_latest"
+        )]
+      ),
+    ]
+
+    if(nrow(train) < min_train){
+      next
+    }
+
+    test <- d[i, ]
+
+    if(
+      any(
+        is.na(
+          test[, c(
+            "dci",
+            "cli_rt",
+            "cli_latest"
+          )]
+        )
+      )
+    ){
+      next
+    }
+
+    fit_ar <- lm(
+      y ~ dci,
+      data = train
+    )
+
+    fit_cli_rt <- lm(
+      y ~ dci + cli_rt,
+      data = train
+    )
+
+    fit_cli_latest <- lm(
+      y ~ dci + cli_latest,
+      data = train
+    )
+
+    pred_ar <- as.numeric(
+      predict(
+        fit_ar,
+        newdata = test
+      )
+    )
+
+    pred_cli_rt <- as.numeric(
+      predict(
+        fit_cli_rt,
+        newdata = test
+      )
+    )
+
+    pred_cli_latest <- as.numeric(
+      predict(
+        fit_cli_latest,
+        newdata = test
+      )
+    )
+
+    gamma_rt <- coef(
+      fit_cli_rt
+    )["cli_rt"]
+
+    gamma_latest <- coef(
+      fit_cli_latest
+    )["cli_latest"]
+
+    out <- rbind(
+      out,
+      data.frame(
+        pub_ym = p,
+        pub_date = test$pub_date,
+        horizon = test$horizon,
+        n_train = nrow(train),
+        adj_r2_ar = summary(fit_ar)$adj.r.squared,
+        adj_r2_cli_rt = summary(fit_cli_rt)$adj.r.squared,
+        adj_r2_cli_latest = summary(fit_cli_latest)$adj.r.squared,
+        delta_adj_r2_rt = summary(fit_cli_rt)$adj.r.squared -
+          summary(fit_ar)$adj.r.squared,
+        delta_adj_r2_latest = summary(fit_cli_latest)$adj.r.squared -
+          summary(fit_ar)$adj.r.squared,
+        gamma_rt = gamma_rt,
+        gamma_latest = gamma_latest,
+        actual = test$y,
+        pred_ar = pred_ar,
+        pred_cli_rt = pred_cli_rt,
+        pred_cli_latest = pred_cli_latest,
+        err_ar = test$y - pred_ar,
+        err_cli_rt = test$y - pred_cli_rt,
+        err_cli_latest = test$y - pred_cli_latest,
+        forecast_revision = pred_cli_latest -
+          pred_cli_rt
+      )
+    )
+  }
+
+  out
+}
+```
+
+```{r, include=FALSE}
+heij_results <- data.frame()
+
+for(h in 1:6){
+
+  d1 <- make_heij_data(
+    ci1,
+    cli_release,
+    h
+  )
+
+  r1 <- rolling_heij(
+    d1
+  )
+
+  if(nrow(r1) > 0){
+    r1$CI系列 <- "CI_c"
+    heij_results <- rbind(
+      heij_results,
+      r1
+    )
+  }
+}
+```
+
+```{r, include=FALSE}
+heij_summary <- do.call(
+  rbind,
+  lapply(
+    split(
+      heij_results,
+      list(
+        heij_results$CI系列,
+        heij_results$horizon
+      ),
+      drop = TRUE
+    ),
+    function(d){
+
+      data.frame(
+        CI系列 = d$CI系列[1],
+        予測先月数 = d$horizon[1],
+        予測回数 = nrow(d),
+        平均自由度修正済R2_AR = mean(
+          d$adj_r2_ar,
+          na.rm = TRUE
+        ),
+        平均自由度修正済R2_CLI = mean(
+          d$adj_r2_cli_rt,
+          na.rm = TRUE
+        ),
+        平均R2改善幅 = mean(
+          d$delta_adj_r2_rt,
+          na.rm = TRUE
+        ),
+        RMSE_AR = sqrt(
+          mean(
+            d$err_ar^2,
+            na.rm = TRUE
+          )
+        ),
+        RMSE_CLI = sqrt(
+          mean(
+            d$err_cli_rt^2,
+            na.rm = TRUE
+          )
+        ),
+        MAE_AR = mean(
+          abs(d$err_ar),
+          na.rm = TRUE
+        ),
+        MAE_CLI = mean(
+          abs(d$err_cli_rt),
+          na.rm = TRUE
+        )
+      )
+    }
+  )
+)
+
+heij_summary$RMSE比 <- (
+  heij_summary$RMSE_CLI /
+  heij_summary$RMSE_AR
+)
+
+heij_summary$MAE比 <- (
+  heij_summary$MAE_CLI /
+  heij_summary$MAE_AR
+)
+```
+
+```{r, fig.show="hold", fig.width=10.0, fig.height=5.5, out.width="100%", results="asis"}
+heij_summary_ci_c <- heij_summary[
+  heij_summary$CI系列 == "CI_c",
+]
+
+table4_data <- heij_summary_ci_c[
+  heij_summary_ci_c$予測先月数 %in% c(1, 3, 6),
+  c(
+    "予測先月数",
+    "平均R2改善幅",
+    "RMSE_AR",
+    "RMSE_CLI",
+    "RMSE比"
+  )
+]
+
+names(table4_data) <- c(
+  "予測先",
+  "Δadj.R²",
+  "RMSE（AR）",
+  "RMSE（CLI）",
+  "RMSE比"
+)
+
+for(j in 2:5){
+  table4_data[[j]] <- sprintf(
+    "%.3f",
+    table4_data[[j]]
+  )
+}
+
+table4_data$予測先 <- paste0(
+  table4_data$予測先,
+  "か月"
+)
+
+knitr::kable(
+  table4_data,
+  caption = "表5　AR型ベンチマークとCLIモデルの逐次予測比較（CI_c）",
+  align = c(
+    "c",
+    "c",
+    "c",
+    "c",
+    "c"
+  ),
+  row.names = FALSE
+)
+
+par(mfrow = c(1, 2))
+
+plot(
+  heij_summary_ci_c$予測先月数,
+  heij_summary_ci_c$平均R2改善幅,
+  type = "b",
+  pch = 19,
+  xlab = "Forecast horizon",
+  ylab = "Average adjusted R-squared gain",
+  main = "Average fit gain by horizon: CI_c"
+)
+abline(
+  h = 0,
+  lty = 3
+)
+
+plot(
+  heij_summary_ci_c$予測先月数,
+  heij_summary_ci_c$RMSE比,
+  type = "b",
+  pch = 19,
+  xlab = "Forecast horizon",
+  ylab = "RMSE(CLI) / RMSE(AR)",
+  main = "Relative forecast error by horizon: CI_c"
+)
+abline(
+  h = 1,
+  lty = 3
+)
+
+par(mfrow = c(1, 1))
+```
+
+**図5　CLI追加による当てはまり改善と相対RMSE（CI_c）**
+
+
+
+
+```{r, include=FALSE}
+stark_summary <- do.call(
+  rbind,
+  lapply(
+    split(
+      heij_results,
+      list(
+        heij_results$CI系列,
+        heij_results$horizon
+      ),
+      drop = TRUE
+    ),
+    function(d){
+
+      data.frame(
+        CI系列 = d$CI系列[1],
+        予測先月数 = d$horizon[1],
+        予測回数 = nrow(d),
+        RMSE_RealTime = sqrt(
+          mean(
+            d$err_cli_rt^2,
+            na.rm = TRUE
+          )
+        ),
+        RMSE_Latest = sqrt(
+          mean(
+            d$err_cli_latest^2,
+            na.rm = TRUE
+          )
+        ),
+        MAE_RealTime = mean(
+          abs(d$err_cli_rt),
+          na.rm = TRUE
+        ),
+        MAE_Latest = mean(
+          abs(d$err_cli_latest),
+          na.rm = TRUE
+        ),
+        平均予測改定幅 = mean(
+          d$forecast_revision,
+          na.rm = TRUE
+        ),
+        平均絶対予測改定幅 = mean(
+          abs(d$forecast_revision),
+          na.rm = TRUE
+        )
+      )
+    }
+  )
+)
+
+stark_summary$RMSE比 <- (
+  stark_summary$RMSE_Latest /
+  stark_summary$RMSE_RealTime
+)
+
+stark_summary$MAE比 <- (
+  stark_summary$MAE_Latest /
+  stark_summary$MAE_RealTime
+)
+```
+
+```{r, fig.width=10.0, fig.height=7.0, out.width="100%", fig.cap="補助図S3　2か月先逐次推計における当てはまり改善とCLI係数の推移"}
+d_h2 <- heij_results[
+  heij_results$CI系列 == "CI_c" &
+  heij_results$horizon == 2,
+]
+
+par(mfrow = c(2, 1), mar = c(4.2, 4.4, 2.5, 1.0))
+
+plot(
+  d_h2$pub_date,
+  d_h2$delta_adj_r2_rt,
+  type = "l",
+  xlab = "Publication date",
+  ylab = "Adjusted R-squared gain",
+  main = "Rolling fit gain: CI_c, h = 2"
+)
+abline(h = 0, lty = 3)
+
+plot(
+  d_h2$pub_date,
+  d_h2$gamma_rt,
+  type = "l",
+  xlab = "Publication date",
+  ylab = "CLI coefficient",
+  main = "Rolling CLI coefficient: CI_c, h = 2"
+)
+abline(h = 0, lty = 3)
+
+par(mfrow = c(1, 1))
+```
+
+```{r, fig.cap=c("補助図S4　ヴィンテージ選択に対するRMSEの感応度","補助図S5　予測値の平均絶対改定幅")}
+plot_stark_summary <- function(
+  value_name,
+  ylab_text,
+  main_title,
+  reference_value = NULL
+){
+
+  d <- stark_summary[
+    stark_summary$CI系列 == "CI_c",
+  ]
+
+  plot(
+    range(d$予測先月数),
+    range(d[[value_name]], na.rm = TRUE),
+    type = "b",
+    pch = 19,
+    xlab = "Forecast horizon",
+    ylab = ylab_text,
+    main = main_title
+  )
+
+  if(!is.null(reference_value)){
+    abline(
+      h = reference_value,
+      lty = 3
+    )
+  }
+}
+
+plot_stark_summary(
+  "RMSE比",
+  "RMSE(Latest) / RMSE(Real-time)",
+  "Vintage sensitivity of RMSE",
+  reference_value = 1
+)
+
+plot_stark_summary(
+  "平均絶対予測改定幅",
+  "Mean absolute forecast revision",
+  "Average forecast revision by horizon"
+)
+```
+
+```{r, fig.width=10.0, fig.height=5.5, out.width="100%", fig.cap="補助図S6　2か月先予測におけるlatest-availableとreal-timeの予測値差"}
+d_h2 <- heij_results[
+  heij_results$CI系列 == "CI_c" &
+  heij_results$horizon == 2,
+]
+
+plot(
+  d_h2$pub_date,
+  d_h2$forecast_revision,
+  type = "l",
+  xlab = "Publication date",
+  ylab = "Forecast revision (Latest - Real-time)",
+  main = "Forecast revision over time: CI_c, h = 2"
+)
+abline(h = 0, lty = 3)
+```
+
+```{r, fig.width=10.0, fig.height=5.8, out.width="100%", fig.cap="補助図S7　2か月先予測における実績値とreal-time・latest-available予測値"}
+plot(
+  d_h2$pub_date,
+  d_h2$actual,
+  type = "l",
+  lwd = 1.6,
+  xlab = "Publication date",
+  ylab = "CI_c change",
+  main = "Actual and forecast values: CI_c, h = 2"
+)
+lines(d_h2$pub_date, d_h2$pred_cli_rt, lty = 2)
+lines(d_h2$pub_date, d_h2$pred_cli_latest, lty = 3)
+abline(h = 0, lty = 3)
+legend(
+  "topright",
+  legend = c("Actual", "Real-time CLI forecast", "Latest-available CLI forecast"),
+  lty = c(1, 2, 3),
+  lwd = c(1.6, 1, 1),
+  bty = "n"
+)
+```
+
+## 再現上の注意
+
+- `data/兵庫cliデータ.xlsx` をリポジトリ内の `data` フォルダに置く。
+- 必要なRパッケージは `openxlsx`、`knitr` である。
+- 本文掲載図は図1～図5、本文掲載表は表1～表5である。
+- 補助図S1～S7は、紙幅の都合で本文から割愛した第3章の分析結果を電子資料として示す。
+
