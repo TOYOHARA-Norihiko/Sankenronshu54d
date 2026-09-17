@@ -1655,7 +1655,7 @@ for(j in 2:length(vintage_ym)){
 }
 ```
 
-```{r, fig.cap=c("補助図S1　ヴィンテージ更新の時系列分解","補助図S2　新規方向情報と前月値改定の4象限")}
+```{r, fig.cap="補助図S1　ヴィンテージ更新の時系列分解"}
 
 plot(
   vintage_decomp$pub_date,
@@ -1687,6 +1687,10 @@ legend(
   lty = c(1, 2),
   bty = "n"
 )
+
+```
+
+```{r, fig.cap="補助図S2　新規方向情報と前月値改定の4象限"}
 
 plot(
   vintage_decomp$前月値の改定,
@@ -2187,7 +2191,7 @@ abline(h = 0, lty = 3)
 par(mfrow = c(1, 1))
 ```
 
-```{r, fig.cap=c("補助図S4　ヴィンテージ選択に対するRMSEの感応度","補助図S5　予測値の平均絶対改定幅")}
+```{r, fig.cap="補助図S4　ヴィンテージ選択に対するRMSEの感応度"}
 plot_stark_summary <- function(
   value_name,
   ylab_text,
@@ -2223,7 +2227,9 @@ plot_stark_summary(
   "Vintage sensitivity of RMSE",
   reference_value = 1
 )
+``` 
 
+```{r, fig.cap="補助図S5　予測値の平均絶対改定幅"}
 plot_stark_summary(
   "平均絶対予測改定幅",
   "Mean absolute forecast revision",
